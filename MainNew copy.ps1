@@ -119,6 +119,12 @@ $lblWelcome.AutoSize = $true
 $lblWelcome.Location = New-Object System.Drawing.Point(20,20)
 $pageWelcome.Controls.Add($lblWelcome)
 
+$lblInfo = New-Object System.Windows.Forms.Label
+$lblInfo.Text = "Lorem ipsum dolor sit amet, consectetur adipisci elit, sed eiusmod tempor incidunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur. Quis aute iure reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint obcaecat cupiditat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+$lblInfo.AutoSize = $true
+$lblInfo.Location = New-Object System.Drawing.Point(20, 500)
+$pageWelcome.Controls.Add($lblInfo)
+
 $gbImage = New-Object System.Windows.Forms.GroupBox
 $gbImage.Text = (T 'GroupImageTitle')
 $gbImage.Location = New-Object System.Drawing.Point(12,45)

@@ -19,11 +19,21 @@ Supports:
 param(
     [switch]$FullRebuild,
     [switch]$Autostart,
-    [string]$SourcePath = $PSScriptRoot
+    [string]$SourcePath = $PSScriptRoot,
+    [ValidateSet("amd64","x64","x86","arm","arm64","ia64","axp64","woa")][string]$Arch = "amd64"
 )
 
 # --- CONFIGURATION ---
-$Arch = "amd64"
+# Normalize common aliases (user may pass x64 etc.)
+switch ($Arch.ToLower()) {
+    'x64'  { $Arch = 'amd64' }
+    'amd64'{ $Arch = 'amd64' }
+    'x86'  { $Arch = 'x86' }
+    'arm'  { $Arch = 'arm' }
+    'arm64'{ $Arch = 'arm64' }
+    default { $Arch = $Arch }
+}
+
 $WinPEWorkDir = "C:\WinPE_25H2"
 $MountDir = "$WinPEWorkDir\mount"
 $SrcDir = (Resolve-Path $SourcePath).Path
@@ -110,6 +120,65 @@ X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\MainNe
     }
     Set-Content -Path $Startnet -Value $StartupCmd -Encoding ASCII
     Write-OK "startnet.cmd configured (Autostart: $Autostart)"
+
+    # Write PixelPE build information into the offline SOFTWARE hive so WinPE can expose it at HKLM\SOFTWARE\PixelPE
+    $SoftwareHive = Join-Path $MountDir "Windows\System32\config\SOFTWARE"
+    if (Test-Path $SoftwareHive) {
+        Write-Info "Updating SOFTWARE hive with PixelPE build info..."
+        $hiveKey = "HKLM\PixelPE_SOFT"
+        try {
+            # Load the offline SOFTWARE hive
+            & reg.exe load $hiveKey $SoftwareHive | Out-Null
+
+            # Read build number from source root .BUILDNO if present
+            $BuildNoFile = Join-Path $SrcDir ".BUILDNO"
+            if (Test-Path $BuildNoFile) {
+                $BuildNo = (Get-Content $BuildNoFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+                if (-not $BuildNo) { $BuildNo = "0" }
+            }
+            else {
+                $BuildNo = "0"
+            }
+
+            # Construct a PixelPE build tag with lab in format {gitbranch}(username) and a timestamp <YYMMDD-HHMM>
+            $TimeStamp = (Get-Date).ToString("yyMMdd-HHmm")
+
+            # Default values
+            $Branch = "unknown"
+            $User = $env:USERNAME
+
+            # Try to read git branch and git user.name if git is available and $SrcDir is a repo
+            if (Get-Command git -ErrorAction SilentlyContinue) {
+                try {
+                    $gitBranch = (& git -C $SrcDir rev-parse --abbrev-ref HEAD 2>$null).Trim()
+                    if ($gitBranch) { $Branch = $gitBranch }
+                } catch {
+                    # ignore failures, keep defaults
+                }
+            }
+
+            # Compose BuildTag: <BuildNo>.<Arch>.<gitbranch>(<username>).<YYMMDD-HHMM>
+            $BuildTag = "{0}.{1}.{2}({3}).{4}" -f $BuildNo, $Arch, $Branch, $User, $TimeStamp
+
+            # Ensure PixelPE key exists and write values
+            & reg.exe add "$hiveKey\PixelPE" /f | Out-Null
+            & reg.exe add "$hiveKey\PixelPE" /v BuildNumber /t REG_SZ /d "$BuildNo" /f | Out-Null
+            & reg.exe add "$hiveKey\PixelPE" /v BuildTag /t REG_SZ /d "$BuildTag" /f | Out-Null
+            & reg.exe add "$hiveKey\PixelPE" /v SourcePath /t REG_SZ /d "$SrcDir" /f | Out-Null
+
+            Write-OK "PixelPE registry values written: BuildNumber=$BuildNo, BuildTag=$BuildTag"
+        }
+        catch {
+            Write-Warn "Failed to update registry hive: $_"
+        }
+        finally {
+            # Unload hive if it was loaded
+            try { & reg.exe unload $hiveKey | Out-Null } catch {}
+        }
+    }
+    else {
+        Write-Warn "SOFTWARE hive not found at $SoftwareHive — skipping registry update."
+    }
 }
 
 # --- FULL REBUILD -------------------------------------------------------------
