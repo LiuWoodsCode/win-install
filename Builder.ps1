@@ -107,6 +107,16 @@ function Copy-PixelSetupFiles {
         Write-Warning "No wimlib directory found at $WimlibSource — skipping."
     }
 
+    $StepSource = Join-Path $SourcePath "steps"
+    $StepTarget = Join-Path $MountDir "steps"
+    if (Test-Path $StepSource) {
+        Write-Host "Copying steps..."
+        Copy-Item -Recurse -Force -Path $StepSource -Destination $StepTarget
+    }
+    else {
+        Write-Warning "No steps directory found at $StepSource — skipping."
+    }
+
     Write-Info "Configuring startnet.cmd..."
     $Startnet = Join-Path $MountDir "Windows\System32\startnet.cmd"
     if ($Autostart) {
