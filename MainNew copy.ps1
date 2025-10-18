@@ -119,18 +119,8 @@ $lblWelcome.AutoSize = $true
 $lblWelcome.Location = New-Object System.Drawing.Point(20,20)
 $pageWelcome.Controls.Add($lblWelcome)
 
-$BuildTag = Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\PixelPE' -Name 'BuildTag' -ErrorAction SilentlyContinue
-if ($BuildTag) {
-    $BuildTag = $BuildTag
-}
-else {
-    $BuildTag = "Not In PixelPE"
-}
-
 $lblInfo = New-Object System.Windows.Forms.Label
-$winBuild = Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name 'BuildLabEx' -ErrorAction SilentlyContinue
-if ([string]::IsNullOrWhiteSpace($winBuild)) { $winBuild = 'Unknown' }
-$lblInfo.Text = "PixelPE Build: $BuildTag`r`nWindows Build: $winBuild"
+$lblInfo.Text = "Lorem ipsum dolor sit amet, consectetur adipisci elit, sed eiusmod tempor incidunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur. Quis aute iure reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint obcaecat cupiditat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
 $lblInfo.AutoSize = $true
 $lblInfo.Location = New-Object System.Drawing.Point(20, 500)
 $pageWelcome.Controls.Add($lblInfo)
