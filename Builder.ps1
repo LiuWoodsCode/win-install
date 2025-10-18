@@ -8,19 +8,22 @@ Supports:
  - Incremental rebuild (default)
  - Optional autostart (-Autostart)
  - Custom source path for PixelSetup files (-SourcePath, defaults to $PSScriptRoot)
+ - Optional features via -Features (currently supports: pixelrecovery, which includes the 'recovery' folder)
 
 .EXAMPLE
 .\Build-PixelSetup.ps1
 .\Build-PixelSetup.ps1 -FullRebuild
 .\Build-PixelSetup.ps1 -FullRebuild -Autostart
 .\Build-PixelSetup.ps1 -SourcePath "D:\MyPixelSetup"
+.\Build-PixelSetup.ps1 -Features pixelrecovery
 #>
 
 param(
     [switch]$FullRebuild,
     [switch]$Autostart,
     [string]$SourcePath = $PSScriptRoot,
-    [ValidateSet("amd64","x64","x86","arm","arm64","ia64","axp64","woa")][string]$Arch = "amd64"
+    [ValidateSet("amd64","x64","x86","arm","arm64","ia64","axp64","woa")][string]$Arch = "amd64",
+    [ValidateSet("pixelrecovery")][string[]]$Features = @()
 )
 
 # --- CONFIGURATION ---
@@ -105,6 +108,20 @@ function Copy-PixelSetupFiles {
     }
     else {
         Write-Warning "No wimlib directory found at $WimlibSource — skipping."
+    }
+
+    # Include optional features
+    if ($Features -and $Features -contains 'pixelrecovery') {
+        Write-Info "Including feature 'pixelrecovery' (copying recovery folder)..."
+        $RecoverySource = Join-Path $SrcDir 'recovery'
+        $RecoveryTarget = Join-Path $MountDir 'recovery'
+        if (Test-Path $RecoverySource) {
+            New-Item -ItemType Directory -Force -Path $RecoveryTarget | Out-Null
+            Copy-Item -Recurse -Force -Path "$RecoverySource\*" -Destination $RecoveryTarget
+            Write-OK "'recovery' folder copied."
+        } else {
+            Write-Warn "Feature 'pixelrecovery' requested but no 'recovery' folder at $RecoverySource — skipping."
+        }
     }
 
     Write-Info "Configuring startnet.cmd..."
