@@ -432,6 +432,7 @@ function Log {
     $ts = (Get-Date).ToString("HH:mm:ss")
     $line = "[$ts] $Message"
     $txtLog.AppendText($line + [Environment]::NewLine)
+    Write-Host $line
 }
 
 # Core functions (adapt original steps)
