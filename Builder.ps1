@@ -76,6 +76,20 @@ if (-not (Test-Path $CopypePath)) { Write-ErrorAndExit "copype.cmd not found at 
 if (-not (Test-Path $MakePEPath)) { Write-ErrorAndExit "MakeWinPEMedia.cmd not found at '$MakePEPath'." }
 Write-OK "Environment validation passed."
 
+# --- BUILD NUMBER MANAGEMENT ---
+$BuildNumberFile = Join-Path $SrcDir ".BUILDNO"
+$CurrentBuildNo = 0
+if (Test-Path $BuildNumberFile) {
+    $rawBuildNo = (Get-Content $BuildNumberFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+    if ($rawBuildNo) {
+        try { $CurrentBuildNo = [int]$rawBuildNo } catch { $CurrentBuildNo = 0 }
+    }
+}
+$NewBuildNo = $CurrentBuildNo + 1
+Set-Content -Path $BuildNumberFile -Value $NewBuildNo -Encoding ASCII
+$script:BuildNo = $NewBuildNo.ToString()
+Write-Info "Incremented build number to $script:BuildNo."
+
 # --- COPY FILES FUNCTION ------------------------------------------------------
 function Copy-PixelSetupFiles {
     param([string]$MountDir)
@@ -191,15 +205,9 @@ X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\MainNe
             # Load the offline SOFTWARE hive
             & reg.exe load $hiveKey $SoftwareHive | Out-Null
 
-            # Read build number from source root .BUILDNO if present
-            $BuildNoFile = Join-Path $SrcDir ".BUILDNO"
-            if (Test-Path $BuildNoFile) {
-                $BuildNo = (Get-Content $BuildNoFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-                if (-not $BuildNo) { $BuildNo = "0" }
-            }
-            else {
-                $BuildNo = "0"
-            }
+            # Build number already incremented earlier
+            $BuildNo = $script:BuildNo
+            if (-not $BuildNo) { $BuildNo = "0" }
 
             # Construct a PixelPE build tag with lab in format {gitbranch}(username) and a timestamp <YYMMDD-HHMM>
             $TimeStamp = (Get-Date).ToString("yyMMdd-HHmm")
