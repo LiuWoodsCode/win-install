@@ -23,7 +23,7 @@ param(
     [switch]$Autostart,
     [string]$SourcePath = $PSScriptRoot,
     [ValidateSet("amd64","x64","x86","arm","arm64","ia64","axp64","woa")][string]$Arch = "amd64",
-    [ValidateSet("pixelrecovery")][string[]]$Features = @()
+    [ValidateSet("pixelrecovery", "runner", "hiddenconhost")][string[]]$Features = @()
 )
 
 # --- CONFIGURATION ---
@@ -152,14 +152,33 @@ function Copy-PixelSetupFiles {
     Write-Info "Configuring startnet.cmd..."
     $Startnet = Join-Path $MountDir "Windows\System32\startnet.cmd"
     if ($Autostart) {
-        $StartupCmd = @"
+        if ($Features -and $Features -contains 'runner') {
+            Write-Info "Including feature 'runner' (Use experimental launcher script to do prepwork)..."
+            if ($Features -and $Features -contains 'hiddenconhost') {
+                Write-Info "Including feature 'hiddenconhost' (launch PowerShell with hidden console)..." 
+                $StartupCmd = @"
+wpeinit
+X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\launch.ps1" -MakeHidden
+"@
+            }
+            else {
+                $StartupCmd = @"
+wpeinit
+X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\launch.ps1"
+"@
+            }
+        }
+        else {
+            $StartupCmd = @"
 wpeinit
 X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\MainNew copy.ps1"
 "@
+        }
     }
     else {
         $StartupCmd = "wpeinit"
     }
+
     Set-Content -Path $Startnet -Value $StartupCmd -Encoding ASCII
     Write-OK "startnet.cmd configured (Autostart: $Autostart)"
 
