@@ -101,270 +101,82 @@ $wizardFooter.Add_Resize({
     $btnBack.Left   = $wizardFooter.Width - 300
 })
 
-# Wizard pages (Panels)
-$pageWelcome = New-Object System.Windows.Forms.Panel; $pageWelcome.Dock = 'Fill'
-$pageImage   = New-Object System.Windows.Forms.Panel; $pageImage.Dock   = 'Fill'
-$pageWinRE   = New-Object System.Windows.Forms.Panel; $pageWinRE.Dock   = 'Fill'
-$pageTarget  = New-Object System.Windows.Forms.Panel; $pageTarget.Dock  = 'Fill'
-$pageSummary = New-Object System.Windows.Forms.Panel; $pageSummary.Dock = 'Fill'
-$pageInstall = New-Object System.Windows.Forms.Panel; $pageInstall.Dock = 'Fill'
-$pageFinish  = New-Object System.Windows.Forms.Panel; $pageFinish.Dock  = 'Fill'
-$wizardContent.Controls.AddRange(@($pageWelcome,$pageImage,$pageWinRE,$pageTarget,$pageSummary,$pageInstall,$pageFinish))
-$pageWelcome.Visible = $true; foreach($p in @($pageImage,$pageWinRE,$pageTarget,$pageSummary,$pageInstall,$pageFinish)){ $p.Visible = $false }
+# Load step definitions
+$stepsDir = Join-Path $PSScriptRoot 'steps'
+. (Join-Path $stepsDir 'Step.Welcome.ps1')
+. (Join-Path $stepsDir 'Step.Image.ps1')
+. (Join-Path $stepsDir 'Step.Recovery.ps1')
+. (Join-Path $stepsDir 'Step.Target.ps1')
+. (Join-Path $stepsDir 'Step.Summary.ps1')
+. (Join-Path $stepsDir 'Step.Install.ps1')
+. (Join-Path $stepsDir 'Step.Finish.ps1')
 
-# Welcome page content
-$lblWelcome = New-Object System.Windows.Forms.Label
-$lblWelcome.Text = "Install Windows`r`n`r`nChoose Next to continue, or Repair to open recovery tools."
-$lblWelcome.AutoSize = $true
-$lblWelcome.Location = New-Object System.Drawing.Point(20,20)
-$pageWelcome.Controls.Add($lblWelcome)
+# Instantiate step content
+$welcomeStep = New-PixelSetupWelcomePage -BuildTag $BuildTag -WindowsBuild $winBuild -IsWinPE $Global:IsWinPE
+$imageStep   = New-PixelSetupImagePage   -DefaultImagePath $defaultImagePath
+$recoveryStep= New-PixelSetupRecoveryPage
+$targetStep  = New-PixelSetupTargetPage
+$summaryStep = New-PixelSetupSummaryPage
+$installStep = New-PixelSetupInstallPage
+$finishStep  = New-PixelSetupFinishPage
 
-$BuildTag = Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\PixelPE' -Name 'BuildTag' -ErrorAction SilentlyContinue
-if ($BuildTag) {
-    $BuildTag = $BuildTag
+$wizardSteps = @($welcomeStep,$imageStep,$recoveryStep,$targetStep,$summaryStep,$installStep,$finishStep)
+foreach ($step in $wizardSteps) {
+    $wizardContent.Controls.Add($step.Panel)
 }
-else {
-    $BuildTag = "Not In PixelPE"
+function Set-WizardPanelVisibility {
+    param(
+        [object]$Panel,
+        [bool]$IsVisible
+    )
+    if (-not $Panel) { return }
+    if ($Panel.PSObject.Properties['Visible']) {
+        $Panel.Visible = $IsVisible
+    } elseif ($IsVisible -and $Panel.PSObject.Methods['Show']) {
+        $Panel.Show()
+    } elseif (-not $IsVisible -and $Panel.PSObject.Methods['Hide']) {
+        $Panel.Hide()
+    }
 }
+for ($i=0; $i -lt $wizardSteps.Count; $i++) {
+    Set-WizardPanelVisibility -Panel $wizardSteps[$i].Panel -IsVisible ($i -eq 0)
+}
+$script:WizardPages = @(
+    @{ Name='Welcome';   Panel=$welcomeStep.Panel },
+    @{ Name='Image';     Panel=$imageStep.Panel },
+    @{ Name='Recovery';  Panel=$recoveryStep.Panel },
+    @{ Name='Target';    Panel=$targetStep.Panel },
+    @{ Name='Summary';   Panel=$summaryStep.Panel },
+    @{ Name='Installing';Panel=$installStep.Panel },
+    @{ Name='Finish';    Panel=$finishStep.Panel }
+)
 
-$lblInfo = New-Object System.Windows.Forms.Label
-$winBuild = Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name 'BuildLabEx' -ErrorAction SilentlyContinue
-if ([string]::IsNullOrWhiteSpace($winBuild)) { $winBuild = 'Unknown' }
-$lblInfo.Text = "PixelPE Build: $BuildTag`r`nWindows Build: $winBuild"
-$lblInfo.AutoSize = $true
-$lblInfo.Location = New-Object System.Drawing.Point(20, 500)
-$pageWelcome.Controls.Add($lblInfo)
+# Extract frequently used controls
+$btnRepair = $welcomeStep.Controls.RepairButton
 
-$gbImage = New-Object System.Windows.Forms.GroupBox
-$gbImage.Text = (T 'GroupImageTitle')
-$gbImage.Location = New-Object System.Drawing.Point(12,45)
-$gbImage.Size = New-Object System.Drawing.Size(940,130)
-$form.Controls.Add($gbImage)
-# Re-parent to wizard page and reposition
-$gbImage.Parent = $pageImage
-$gbImage.Location = New-Object System.Drawing.Point(20,20)
+$txtPath   = $imageStep.Controls.PathTextbox
+$btnBrowse = $imageStep.Controls.BrowseButton
+$btnList   = $imageStep.Controls.ListImagesButton
+$cmbIndexes= $imageStep.Controls.IndexCombo
+$rbFsNtfs  = $imageStep.Controls.FsNtfsRadio
+$rbFsRefs  = $imageStep.Controls.FsRefsRadio
 
-$lblPath = New-Object System.Windows.Forms.Label
-$lblPath.Text = (T 'ImagePathLabel')
-$lblPath.AutoSize = $true
-$lblPath.Location = New-Object System.Drawing.Point(12,28)
-$gbImage.Controls.Add($lblPath)
+$rbReFull = $recoveryStep.Controls.FullRadio
+$rbReSkip = $recoveryStep.Controls.SkipRadio
+$rbReNone = $recoveryStep.Controls.NoneRadio
 
-$txtPath = New-Object System.Windows.Forms.TextBox
-$txtPath.Location = New-Object System.Drawing.Point(140,25)
-$txtPath.Size = New-Object System.Drawing.Size(650,23)
-$txtPath.Text = $defaultImagePath
-$gbImage.Controls.Add($txtPath)
+$cbTest         = $targetStep.Controls.TestModeCheckbox
+$btnRefreshDisks= $targetStep.Controls.RefreshButton
+$lvDisks        = $targetStep.Controls.DiskListView
 
-$btnBrowse = New-Object System.Windows.Forms.Button
-$btnBrowse.Text = (T 'Browse')
-$btnBrowse.Location = New-Object System.Drawing.Point(800,24)
-$btnBrowse.Size = New-Object System.Drawing.Size(120,25)
-$gbImage.Controls.Add($btnBrowse)
+$txtSummary = $summaryStep.Controls.SummaryTextbox
+$btnInstall = $summaryStep.Controls.InstallButton
 
-$btnList = New-Object System.Windows.Forms.Button
-$btnList.Text = (T 'ListImages')
-$btnList.Location = New-Object System.Drawing.Point(800,60)
-$btnList.Size = New-Object System.Drawing.Size(120,25)
-$gbImage.Controls.Add($btnList)
-
-$lblIndex = New-Object System.Windows.Forms.Label
-$lblIndex.Text = (T 'SelectIndexLabel')
-$lblIndex.AutoSize = $true
-$lblIndex.Location = New-Object System.Drawing.Point(12,65)
-$gbImage.Controls.Add($lblIndex)
-
-$cmbIndexes = New-Object System.Windows.Forms.ComboBox
-$cmbIndexes.DropDownStyle = 'DropDownList'
-$cmbIndexes.Location = New-Object System.Drawing.Point(140,62)
-$cmbIndexes.Size = New-Object System.Drawing.Size(650,23)
-$gbImage.Controls.Add($cmbIndexes)
-
-# NEW: File system selection (default NTFS; ReFS enabled when supported)
-$lblFs = New-Object System.Windows.Forms.Label
-$lblFs.Text = (T 'FSLabel')
-$lblFs.AutoSize = $true
-$lblFs.Location = New-Object System.Drawing.Point(12,95)
-$gbImage.Controls.Add($lblFs)
-
-$rbFsNtfs = New-Object System.Windows.Forms.RadioButton
-$rbFsNtfs.Text = (T 'FSNTFS')
-$rbFsNtfs.Location = New-Object System.Drawing.Point(200,93)
-$rbFsNtfs.AutoSize = $true
-$rbFsNtfs.Checked = $true
-$gbImage.Controls.Add($rbFsNtfs)
-
-$rbFsRefs = New-Object System.Windows.Forms.RadioButton
-$rbFsRefs.Text = (T 'FSReFS')
-$rbFsRefs.Location = New-Object System.Drawing.Point(330,93)
-$rbFsRefs.AutoSize = $true
-$rbFsRefs.Enabled = $false
-$gbImage.Controls.Add($rbFsRefs)
-
-$gbWinRE = New-Object System.Windows.Forms.GroupBox
-$gbWinRE.Text = (T 'GroupWinRETitle')
-$gbWinRE.Location = New-Object System.Drawing.Point(12,185)
-$gbWinRE.Size = New-Object System.Drawing.Size(460,120)
-$form.Controls.Add($gbWinRE)
-# Re-parent to wizard page and reposition
-$gbWinRE.Parent = $pageWinRE
-$gbWinRE.Location = New-Object System.Drawing.Point(20,20)
-
-$rbReFull = New-Object System.Windows.Forms.RadioButton
-$rbReFull.Text = (T 'ReFull')
-$rbReFull.Location = New-Object System.Drawing.Point(12,25)
-$rbReFull.AutoSize = $true
-$rbReFull.Checked = $true
-$gbWinRE.Controls.Add($rbReFull)
-
-$rbReSkip = New-Object System.Windows.Forms.RadioButton
-$rbReSkip.Text = (T 'ReSkip')
-$rbReSkip.Location = New-Object System.Drawing.Point(12,50)
-$rbReSkip.AutoSize = $true
-$gbWinRE.Controls.Add($rbReSkip)
-
-$rbReNone = New-Object System.Windows.Forms.RadioButton
-$rbReNone.Text = (T 'ReNone')
-$rbReNone.Location = New-Object System.Drawing.Point(12,75)
-$rbReNone.AutoSize = $true
-$gbWinRE.Controls.Add($rbReNone)
-
-$gbTarget = New-Object System.Windows.Forms.GroupBox
-$gbTarget.Text = (T 'GroupTargetTitle')
-$gbTarget.Location = New-Object System.Drawing.Point(492,185)
-$gbTarget.Size = New-Object System.Drawing.Size(460,220)
-$form.Controls.Add($gbTarget)
-# Re-parent to wizard page and reposition
-$gbTarget.Parent = $pageTarget
-$gbTarget.Location = New-Object System.Drawing.Point(20,20)
-$gbTarget.Width = 900
-
-$cbTest = New-Object System.Windows.Forms.CheckBox
-$cbTest.Text = (T 'TestModeLabel')
-$cbTest.Location = New-Object System.Drawing.Point(12,25)
-$cbTest.AutoSize = $true
-$gbTarget.Controls.Add($cbTest)
-
-$btnRefreshDisks = New-Object System.Windows.Forms.Button
-$btnRefreshDisks.Text = (T 'RefreshDisks')
-$btnRefreshDisks.Location = New-Object System.Drawing.Point(320,20)
-$btnRefreshDisks.Size = New-Object System.Drawing.Size(120,25)
-$gbTarget.Controls.Add($btnRefreshDisks)
-
-$lvDisks = New-Object System.Windows.Forms.ListView
-$lvDisks.Location = New-Object System.Drawing.Point(12,55)
-$lvDisks.Size = New-Object System.Drawing.Size(428,150)
-$lvDisks.View = 'Details'
-$lvDisks.FullRowSelect = $true
-$lvDisks.Columns.Add((T 'ColumnNumber'),60) | Out-Null
-$lvDisks.Columns.Add((T 'ColumnFriendlyName'),180) | Out-Null
-$lvDisks.Columns.Add((T 'ColumnSizeGB'),90) | Out-Null
-$lvDisks.Columns.Add((T 'ColumnStyle'),80) | Out-Null
-$gbTarget.Controls.Add($lvDisks)
-
-$gbActions = New-Object System.Windows.Forms.GroupBox
-$gbActions.Text = (T 'GroupActionsTitle')
-$gbActions.Location = New-Object System.Drawing.Point(12,315)
-$gbActions.Size = New-Object System.Drawing.Size(460,90)
-$form.Controls.Add($gbActions)
-# Hide legacy actions area (navigation moved to footer)
-$gbActions.Visible = $false
-
-$btnInstall = New-Object System.Windows.Forms.Button
-$btnInstall.Text = (T 'Install')
-$btnInstall.Location = New-Object System.Drawing.Point(12,30)
-$btnInstall.Size = New-Object System.Drawing.Size(140,35)
-$gbActions.Controls.Add($btnInstall)
-# Hide old install button; wizard Next will start install
-$btnInstall.Visible = $false
-
-$btnClose = New-Object System.Windows.Forms.Button
-$btnClose.Text = (T 'Close')
-$btnClose.Location = New-Object System.Drawing.Point(170,30)
-$btnClose.Size = New-Object System.Drawing.Size(140,35)
-$gbActions.Controls.Add($btnClose)
-# Legacy Close hidden
-$btnClose.Visible = $false
-
-# NEW: Repair button (WinPE only)
-$btnRepair = New-Object System.Windows.Forms.Button
-$btnRepair.Text = (T 'Repair')
-$btnRepair.Location = New-Object System.Drawing.Point(330,30)
-$btnRepair.Size = New-Object System.Drawing.Size(120,35)
-$btnRepair.Enabled = $Global:IsWinPE
-$gbActions.Controls.Add($btnRepair)
-# Move Repair onto Welcome page
-$btnRepair.Parent = $pageWelcome
-$btnRepair.Location = New-Object System.Drawing.Point(20,90)
-
-# NEW: Progress UI (two bars: current step and overall)
-$gbProgress = New-Object System.Windows.Forms.GroupBox
-$gbProgress.Text = (T 'ProgressTitle')
-$gbProgress.Location = New-Object System.Drawing.Point(12,415)
-$gbProgress.Size = New-Object System.Drawing.Size(940,80)
-$form.Controls.Add($gbProgress)
-# Re-parent to Installing page
-$gbProgress.Parent = $pageInstall
-$gbProgress.Location = New-Object System.Drawing.Point(20,20)
-
-$lblStepName = New-Object System.Windows.Forms.Label
-$lblStepName.Text = (T 'StepLabelReady')
-$lblStepName.AutoSize = $true
-$lblStepName.Location = New-Object System.Drawing.Point(12,22)
-$gbProgress.Controls.Add($lblStepName)
-
-$pbStep = New-Object System.Windows.Forms.ProgressBar
-$pbStep.Location = New-Object System.Drawing.Point(120,20)
-$pbStep.Size = New-Object System.Drawing.Size(800,18)
-$pbStep.Minimum = 0; $pbStep.Maximum = 100; $pbStep.Value = 0
-$gbProgress.Controls.Add($pbStep)
-
-$lblTotal = New-Object System.Windows.Forms.Label
-$lblTotal.Text = (T 'Overall0')
-$lblTotal.AutoSize = $true
-$lblTotal.Location = New-Object System.Drawing.Point(12,50)
-$gbProgress.Controls.Add($lblTotal)
-
-$pbTotal = New-Object System.Windows.Forms.ProgressBar
-$pbTotal.Location = New-Object System.Drawing.Point(120,48)
-$pbTotal.Size = New-Object System.Drawing.Size(800,18)
-$pbTotal.Minimum = 0; $pbTotal.Maximum = 100; $pbTotal.Value = 0
-$gbProgress.Controls.Add($pbTotal)
-
-$txtLog = New-Object System.Windows.Forms.TextBox
-$txtLog.Multiline = $true
-$txtLog.ScrollBars = 'Vertical'
-$txtLog.ReadOnly = $true
-# MOVED DOWN to make room for progress group
-$txtLog.Location = New-Object System.Drawing.Point(12,505)
-$txtLog.Size = New-Object System.Drawing.Size(940,170)
-$form.Controls.Add($txtLog)
-# Re-parent to Installing page and reposition/resize
-$txtLog.Parent = $pageInstall
-$txtLog.Location = New-Object System.Drawing.Point(20,120)
-$txtLog.Size = New-Object System.Drawing.Size(900,420)
-
-# Summary page content
-$lblSummary = New-Object System.Windows.Forms.Label
-$lblSummary.Text = "Confirm your settings before installation:"
-$lblSummary.AutoSize = $true
-$lblSummary.Location = New-Object System.Drawing.Point(20,20)
-$pageSummary.Controls.Add($lblSummary)
-
-$txtSummary = New-Object System.Windows.Forms.TextBox
-$txtSummary.Multiline = $true
-$txtSummary.ReadOnly = $true
-$txtSummary.ScrollBars = 'Vertical'
-$txtSummary.Location = New-Object System.Drawing.Point(20,50)
-$txtSummary.Size = New-Object System.Drawing.Size(900,450)
-$pageSummary.Controls.Add($txtSummary)
-
-# Finish page content
-$lblFinish = New-Object System.Windows.Forms.Label
-$lblFinish.Text = (T 'InstallComplete') + " You can close this wizard."
-$lblFinish.AutoSize = $true
-$lblFinish.Location = New-Object System.Drawing.Point(20,20)
-$pageFinish.Controls.Add($lblFinish)
+$lblStepName = $installStep.Controls.StepLabel
+$pbStep      = $installStep.Controls.StepProgressBar
+$lblTotal    = $installStep.Controls.TotalLabel
+$pbTotal     = $installStep.Controls.TotalProgressBar
+$txtLog      = $installStep.Controls.LogTextbox
 
 # Wizard state and helpers
 $script:WizardIndex = 0
@@ -382,7 +194,7 @@ function Show-WizardPage {
     param([int]$Index)
     if ($Index -lt 0 -or $Index -ge $script:WizardPages.Count) { return }
     for ($i=0; $i -lt $script:WizardPages.Count; $i++) {
-        $script:WizardPages[$i].Panel.Visible = ($i -eq $Index)
+        Set-WizardPanelVisibility -Panel $script:WizardPages[$i].Panel -IsVisible ($i -eq $Index)
     }
     $script:WizardIndex = $Index
     Update-WizardButtons
@@ -432,6 +244,7 @@ function Log {
     $ts = (Get-Date).ToString("HH:mm:ss")
     $line = "[$ts] $Message"
     $txtLog.AppendText($line + [Environment]::NewLine)
+    Write-Host $line
 }
 
 # Core functions (adapt original steps)
@@ -972,7 +785,6 @@ $btnList.Add_Click({
         foreach ($img in $imgs) {
             $sizeGiB = [Math]::Round($img.TotalBytes/1GB,2)
             $display = (T 'ImageEntryFmt' $img.Index $img.Name $img.Build $sizeGiB)
-            # Include Build so ReFS eligibility can be checked later
             $null = $cmbIndexes.Items.Add([PSCustomObject]@{ Display=$display; Index=$img.Index; Build=$img.Build })
         }
         if ($cmbIndexes.Items.Count -gt 0) { $cmbIndexes.SelectedIndex = 0 }
@@ -986,127 +798,16 @@ $btnList.Add_Click({
         [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, (T 'PixelSetupTitle'), 'OK', 'Error') | Out-Null
     }
 })
-
 # Update FS options when selection changes
 $cmbIndexes.add_SelectedIndexChanged({ Update-FsOptions })
 
-function Refresh-Disks {
-    Log "Refresh-Disks: Enumerating disks..."
-    $lvDisks.Items.Clear()
-    $disks = Get-Disk | Select-Object Number, FriendlyName, Size, PartitionStyle
-    foreach ($d in $disks) {
-        $sizeGB = [Math]::Round($d.Size/1GB,2)
-        Log ("Refresh-Disks: Disk {0} '{1}' Size={2}GB Style={3}" -f $d.Number,$d.FriendlyName,$sizeGB,$d.PartitionStyle)
-        $item = New-Object System.Windows.Forms.ListViewItem($d.Number.ToString())
-        $null = $item.SubItems.Add($d.FriendlyName)
-        $null = $item.SubItems.Add($sizeGB.ToString())
-        $null = $item.SubItems.Add($d.PartitionStyle.ToString())
-        $null = $lvDisks.Items.Add($item)
-    }
-    Log "Refresh-Disks: Total disks listed: $($disks.Count)"
-}
 $btnRefreshDisks.Add_Click({ Refresh-Disks })
 $cbTest.Add_CheckedChanged({
     $lvDisks.Enabled = -not $cbTest.Checked
     $btnRefreshDisks.Enabled = -not $cbTest.Checked
 })
 
-$btnInstall.Add_Click({
-    # Basic validation
-    $imgPath = $txtPath.Text
-    if ([string]::IsNullOrWhiteSpace($imgPath) -or -not (Test-Path $imgPath)) {
-        [System.Windows.Forms.MessageBox]::Show((T 'SelectValidImage'), (T 'PixelSetupTitle'), 'OK', 'Warning') | Out-Null
-        return
-    }
-    if ($cmbIndexes.SelectedItem -eq $null) {
-        [System.Windows.Forms.MessageBox]::Show((T 'SelectIndexPrompt'), (T 'PixelSetupTitle'), 'OK', 'Warning') | Out-Null
-        return
-    }
-    $index = $cmbIndexes.SelectedItem.Index
-    $reMode = if ($rbReFull.Checked) { 1 } elseif ($rbReSkip.Checked) { 2 } else { 3 }
-    $testMode = $cbTest.Checked
-    $fsChoice = if ($rbFsRefs.Checked) { "ReFS" } else { "NTFS" }
-
-    # NEW: initialize overall progress plan with per-wimlib phases
-    $planned = @((T 'StepInitialization')) + ($(if ($testMode) { @((T 'StepTestModeNotice')) } else { @((T 'StepPartitioning')) })) + @(
-        (T 'StepApplyCreatingFiles'),(T 'StepApplyExtracting'),(T 'StepApplyApplyingMetadata'),
-        (T 'StepBCDBoot'),(T 'StepWinRE'),(T 'StepFinalization')
-    )
-    Initialize-Progress -Steps $planned
-
-    # ...existing code to get $diskNum ...
-
-    # Disable UI during operation
-    $form.UseWaitCursor = $true
-    foreach ($c in $form.Controls) { $c.Enabled = $false }
-    $currentStep = $null
-    try {
-        Start-Step (T 'StepInitialization')
-        Log "Starting installation..."
-        Write-EnvironmentInfo
-
-        # NEW: Select drive letters if not in Test Mode
-        $letters = $null
-        if (-not $testMode) {
-            $letters = Select-PartitionLetters -ReMode $reMode
-            Log ("Selected letters: EFI={0}: Windows={1}:{2}" -f $letters.Efi,$letters.Windows,($(if ($reMode -ne 3) { " Recovery=$($letters.Recovery):" } else { "" })))
-        } else {
-            Log "Test Mode: Drive letter selection skipped."
-        }
-
-        Log ("Selected: ImagePath='{0}' Index={1} ReMode={2} TestMode={3} Disk={4} FS={5} ForceReFs={6}" -f $imgPath,$index,$reMode,$testMode,($diskNum ?? "<n/a>"),$fsChoice,$ForceReFsSupport.IsPresent)
-        $wim = Ensure-Wimlib -LocalPath $wimlib
-        Log "Using wimlib: $wim"
-        End-Step (T 'StepInitialization') "OK"
-
-        if ($testMode) {
-            Start-Step (T 'StepTestModeNotice')
-            Log "Test Mode enabled: applying image to C:\\Test (no disk changes)."
-            Log "Note: File system selection ($fsChoice) only applies when partitioning; it is ignored in Test Mode."
-            End-Step (T 'StepTestModeNotice') "OK"
-        } else {
-            Start-Step (T 'StepPartitioning')
-            Log "Wiping and partitioning disk $diskNum..."
-            $script = Make-PartitionScript -DiskNumber $diskNum -ReMode $reMode -FileSystem $fsChoice -EfiLetter $letters.Efi -WindowsLetter $letters.Windows -RecoveryLetter $letters.Recovery
-            Run-Diskpart -ScriptContent $script
-            End-Step (T 'StepPartitioning') "OK"
-        }
-
-        $applyDir = if ($testMode) { "C:\\Test" } else { "$($letters.Windows):\\" }
-        Apply-Image -WimlibPath $wim -ImagePath $imgPath -Index $index -ApplyDir $applyDir
-
-        if (-not $testMode) {
-            Setup-Boot -WindowsLetter $letters.Windows -EfiLetter $letters.Efi
-        } else {
-            Start-Step (T 'StepBCDBoot')
-            Log "Skipping BCDBoot — Test Mode active."
-            End-Step (T 'StepBCDBoot') "OK" "Skipped TestMode"
-        }
-
-        Configure-WinRE -ReMode $reMode -TestMode:$testMode -WindowsLetter $($letters.Windows) -RecoveryLetter $($letters.Recovery)
-
-        Start-Step (T 'StepFinalization')
-        Log "Installation complete."
-        if ($testMode) {
-            Log "Test Mode installation simulated to C:\\Test. Inspect to verify contents."
-        } else {
-            Log "Remove installation media and reboot into OOBE. Run: wpeutil reboot"
-        }
-        End-Step (T 'StepFinalization') "OK"
-        [System.Windows.Forms.MessageBox]::Show((T 'InstallComplete'), (T 'PixelSetupTitle'), 'OK', 'Information') | Out-Null
-    } catch {
-        Log "ERROR: $($_.Exception.Message)"
-        $running = $Global:InstallSteps | Where-Object { $_.Status -eq "RUNNING" }
-        foreach ($r in $running) { End-Step $r.Name "FAILED" $_.Exception.Message }
-        [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, (T 'PixelSetupErrorTitle'), 'OK', 'Error') | Out-Null
-    } finally {
-        Write-InstallSummary
-        foreach ($c in $form.Controls) { $c.Enabled = $true }
-        $form.UseWaitCursor = $false
-    }
-})
-
-# Replace Install button click with Start-Installation function and wire wizard Next to it
+# Start-Installation orchestrates the install flow used by the wizard navigation.
 function Start-Installation {
     $success = $false
     try {
@@ -1213,12 +914,9 @@ function Start-Installation {
     }
 }
 
-# Wire legacy Install button to the new function (kept hidden)
-$btnInstall.Add_Click({ Start-Installation })
-
 $btnRepair.Add_Click({
     if (-not $Global:IsWinPE) {
-        [System.Windows.Forms.MessageBox]::Show("Repair Environment only available in WinPE.", "PixelSetup", 'OK', 'Information') | Out-Null
+        [System.Windows.Forms.MessageBox]::Show('Repair Environment only available in WinPE.', 'PixelSetup', 'OK', 'Information') | Out-Null
         return
     }
 
@@ -1226,8 +924,8 @@ $btnRepair.Add_Click({
     $scriptPath = Join-Path $PSScriptRoot 'recovery\main.ps1'
     Log "Repair: Requested launch of PowerShell recovery script: $scriptPath"
     if (-not (Test-Path $scriptPath)) {
-        [System.Windows.Forms.MessageBox]::Show("Recovery script not found: $scriptPath", "PixelSetup", 'OK', 'Error') | Out-Null
-        Log "Repair: ERROR - Recovery script not found."
+        [System.Windows.Forms.MessageBox]::Show("Recovery script not found: $scriptPath", 'PixelSetup', 'OK', 'Error') | Out-Null
+        Log 'Repair: ERROR - Recovery script not found.'
         return
     }
     & $scriptPath

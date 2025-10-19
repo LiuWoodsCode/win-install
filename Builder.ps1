@@ -149,6 +149,17 @@ function Copy-PixelSetupFiles {
         Write-Warning "No wimlib directory found at $WimlibSource — skipping."
     }
 
+    $StepSource = Join-Path $SourcePath "steps"
+    $StepTarget = Join-Path $MountDir "steps"
+    if (Test-Path $StepSource) {
+        Write-Host "Copying steps..."
+        Copy-Item -Recurse -Force -Path $StepSource -Destination $StepTarget
+    }
+    else {
+        Write-Warning "No steps directory found at $StepSource — skipping."
+    }
+
+
     # Include optional features
     if ($Features -and $Features -contains 'pixelrecovery') {
         Write-Info "Including feature 'pixelrecovery' (copying recovery folder)..."
