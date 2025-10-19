@@ -88,6 +88,31 @@ function Copy-PixelSetupFiles {
     }
 
     if (Test-Path $OverlayDir) {
+        Write-Info "Preparing ACLs for existing targets in mount dir..."
+        Get-ChildItem -Path $OverlayDir -Recurse -Force | ForEach-Object {
+            $rel = $_.FullName.Substring($OverlayDir.Length).TrimStart('\','/')
+            if (-not $rel) { return }
+            $dest = Join-Path $MountDir $rel
+
+            if (Test-Path $dest) {
+                try {
+                    if ($_.PSIsContainer) {
+                        & takeown.exe /F "$dest" /A /R /D Y | Out-Null
+                        & icacls.exe "$dest" /grant "*S-1-5-32-544:(OI)(CI)F" /T /C | Out-Null  # Administrators
+                        & icacls.exe "$dest" /grant "$($env:USERNAME):(OI)(CI)F" /T /C | Out-Null
+                    }
+                    else {
+                        & takeown.exe /F "$dest" /A /D Y | Out-Null
+                        & icacls.exe "$dest" /grant "*S-1-5-32-544:F" /C | Out-Null            # Administrators
+                        & icacls.exe "$dest" /grant "$($env:USERNAME):F" /C | Out-Null
+                    }
+                }
+                catch {
+                    Write-Warn "ACL adjust failed for $dest - $_"
+                }
+            }
+        }
+
         Write-Info "Applying overlay files..."
         Copy-Item "$OverlayDir\*" $MountDir -Recurse -Force
     }
