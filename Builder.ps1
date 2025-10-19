@@ -66,6 +66,29 @@ function Write-OK($msg) { Write-Host "[+] $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "[!] $msg" -ForegroundColor Yellow }
 function Write-ErrorAndExit($msg) { Write-Host "[X] $msg" -ForegroundColor Red; exit 1 }
 
+# Add a helper to increment the build number stored in .BUILDNO in the source directory
+function Increment-BuildNo {
+    param([string]$Src)
+
+    $BuildNoFile = Join-Path $Src ".BUILDNO"
+    try {
+        if (-not (Test-Path $BuildNoFile)) {
+            # Initialize to 1 on first build
+            Set-Content -Path $BuildNoFile -Value "1" -Encoding ASCII
+            return "1"
+        }
+
+        $cur = (Get-Content $BuildNoFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+        try { $num = [int]$cur } catch { $num = 0 }
+        $num = $num + 1
+        Set-Content -Path $BuildNoFile -Value $num -Encoding ASCII
+        return $num.ToString()
+    } catch {
+        Write-Warn "Failed to increment .BUILDNO: $_"
+        return "0"
+    }
+}
+
 # --- VALIDATION ---------------------------------------------------------------
 Write-Info "Validating environment..."
 if (-not (Test-Path $MainScript)) { Write-ErrorAndExit "Missing 'MainNew copy.ps1' in $SrcDir." }
@@ -142,15 +165,8 @@ X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\MainNe
             # Load the offline SOFTWARE hive
             & reg.exe load $hiveKey $SoftwareHive | Out-Null
 
-            # Read build number from source root .BUILDNO if present
-            $BuildNoFile = Join-Path $SrcDir ".BUILDNO"
-            if (Test-Path $BuildNoFile) {
-                $BuildNo = (Get-Content $BuildNoFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-                if (-not $BuildNo) { $BuildNo = "0" }
-            }
-            else {
-                $BuildNo = "0"
-            }
+            # Increment build number in the source root .BUILDNO and use the new value
+            $BuildNo = Increment-BuildNo -Src $SrcDir
 
             # Construct a PixelPE build tag with lab in format {gitbranch}(username) and a timestamp <YYMMDD-HHMM>
             $TimeStamp = (Get-Date).ToString("yyMMdd-HHmm")
