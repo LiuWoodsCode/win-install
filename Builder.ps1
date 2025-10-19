@@ -66,29 +66,6 @@ function Write-OK($msg) { Write-Host "[+] $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "[!] $msg" -ForegroundColor Yellow }
 function Write-ErrorAndExit($msg) { Write-Host "[X] $msg" -ForegroundColor Red; exit 1 }
 
-# Add a helper to increment the build number stored in .BUILDNO in the source directory
-function Increment-BuildNo {
-    param([string]$Src)
-
-    $BuildNoFile = Join-Path $Src ".BUILDNO"
-    try {
-        if (-not (Test-Path $BuildNoFile)) {
-            # Initialize to 1 on first build
-            Set-Content -Path $BuildNoFile -Value "1" -Encoding ASCII
-            return "1"
-        }
-
-        $cur = (Get-Content $BuildNoFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-        try { $num = [int]$cur } catch { $num = 0 }
-        $num = $num + 1
-        Set-Content -Path $BuildNoFile -Value $num -Encoding ASCII
-        return $num.ToString()
-    } catch {
-        Write-Warn "Failed to increment .BUILDNO: $_"
-        return "0"
-    }
-}
-
 # --- VALIDATION ---------------------------------------------------------------
 Write-Info "Validating environment..."
 if (-not (Test-Path $MainScript)) { Write-ErrorAndExit "Missing 'MainNew copy.ps1' in $SrcDir." }
@@ -106,8 +83,13 @@ function Copy-PixelSetupFiles {
     Write-Info "Copying PixelSetup files from $SrcDir..."
     $TargetDir = Join-Path $MountDir "PixelSetup"
     New-Item -ItemType Directory -Force -Path $TargetDir 
-    Get-ChildItem -Path "$SrcDir\*" -Exclude "overlay", "pwsh" | ForEach-Object {
+    Get-ChildItem $SrcDir -Exclude "overlay", "pwsh" | ForEach-Object {
         Copy-Item $_.FullName -Destination $TargetDir -Recurse -Force
+    }
+
+    if (Test-Path $OverlayDir) {
+        Write-Info "Applying overlay files..."
+        Copy-Item "$OverlayDir\*" $MountDir -Recurse -Force
     }
 
     if (Test-Path $PwshDir) {
@@ -118,7 +100,7 @@ function Copy-PixelSetupFiles {
     }
 
     # Copy wimlib tools if present
-    $WimlibSource = Join-Path $SrcDir "wimlib"
+    $WimlibSource = Join-Path $SourcePath "wimlib"
     $WimlibTarget = Join-Path $MountDir "wimlib"
     if (Test-Path $WimlibSource) {
         Write-Host "Copying wimlib tools..."
@@ -165,8 +147,15 @@ X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\MainNe
             # Load the offline SOFTWARE hive
             & reg.exe load $hiveKey $SoftwareHive | Out-Null
 
-            # Increment build number in the source root .BUILDNO and use the new value
-            $BuildNo = Increment-BuildNo -Src $SrcDir
+            # Read build number from source root .BUILDNO if present
+            $BuildNoFile = Join-Path $SrcDir ".BUILDNO"
+            if (Test-Path $BuildNoFile) {
+                $BuildNo = (Get-Content $BuildNoFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+                if (-not $BuildNo) { $BuildNo = "0" }
+            }
+            else {
+                $BuildNo = "0"
+            }
 
             # Construct a PixelPE build tag with lab in format {gitbranch}(username) and a timestamp <YYMMDD-HHMM>
             $TimeStamp = (Get-Date).ToString("yyMMdd-HHmm")
@@ -207,82 +196,6 @@ X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\MainNe
     else {
         Write-Warn "SOFTWARE hive not found at $SoftwareHive — skipping registry update."
     }
-
-    # Apply overlay last so it overrides any files we created/modified above
-    if (Test-Path $OverlayDir) {
-        Write-Info "Applying overlay files..."
-        Copy-Item "$OverlayDir\*" $MountDir -Recurse -Force
-        Write-OK "Overlay files applied."
-    } else {
-        Write-Warn "No overlay directory found at $OverlayDir — skipping."
-    }
-}
-
-# New helper to take ownership and grant full control for overlay targets that already exist in the mounted image
-function Prepare-OverlayReplacements {
-    param(
-        [string]$MountDir,
-        [string]$OverlayDir
-    )
-
-    if (-not (Test-Path $OverlayDir)) {
-        Write-Warn "No overlay directory found at $OverlayDir — skipping permission pre-check."
-        return
-    }
-
-    # Normalize overlay root so substring operations are reliable (ensure trailing slash for substring)
-    $overlayRoot = (Get-Item $OverlayDir).FullName
-    $overlayRoot = $overlayRoot.TrimEnd('\','/') + '\'
-
-    Write-Info "Scanning overlay for existing targets to unlock (treating overlay root as drive root)..."
-    $adminSid = "S-1-5-32-544" # Built-in Administrators
-    $unlockedCount = 0
-
-    # Process immediate children only so we can use icacls /T on directories (handles nested items efficiently)
-    Get-ChildItem -Path $OverlayDir -Force | ForEach-Object {
-        try {
-            $item = $_
-
-            # Relative path from overlay root is just the immediate child's name
-            $rel = $item.Name
-            $rel = $rel.Replace('/','\').TrimStart('\')
-
-            # Construct corresponding path in the mounted image (treat overlay root as X:\)
-            $target = Join-Path $MountDir $rel
-
-            if (Test-Path $target) {
-                $isDir = $item.PSIsContainer
-
-                # Take ownership (use /R for directories)
-                if ($isDir) {
-                    & takeown.exe /F $target /A /D Y /R | Out-Null
-
-                    # Grant using SID first; use /T to apply recursively
-                    $sidGrant = "*$($adminSid):(F)"
-                    $icaclsOut = & icacls.exe $target /grant $sidGrant /C /T 2>&1
-                    if ($LASTEXITCODE -ne 0) {
-                        & icacls.exe $target /grant "Administrators:(F)" /C /T | Out-Null
-                    }
-                } else {
-                    & takeown.exe /F $target /A /D Y | Out-Null
-
-                    $sidGrant = "*$($adminSid):(F)"
-                    $icaclsOut = & icacls.exe $target /grant $sidGrant /C 2>&1
-                    if ($LASTEXITCODE -ne 0) {
-                        & icacls.exe $target /grant "Administrators:(F)" /C | Out-Null
-                    }
-                }
-
-                $unlockedCount++
-            }
-        } catch {
-            Write-Warn "Failed to adjust ACLs on target for overlay item '$($_.FullName)': $_"
-            # still count it so the summary reflects discovered items
-            $unlockedCount++
-        }
-    }
-
-    Write-OK "Unlocked $unlockedCount overlay items for replacement."
 }
 
 # --- FULL REBUILD -------------------------------------------------------------
@@ -300,7 +213,7 @@ if ($FullRebuild) {
     Write-Info "Running copype from Deployment Tools..."
     Push-Location $DeploymentTools
     try {
-        & $CopypePath $Arch $WinPEWorkDir | Out-Null
+        & $CopypePath $Arch $WinPEWorkDir
     }
     finally {
         Pop-Location
@@ -308,7 +221,6 @@ if ($FullRebuild) {
 
     Write-Info "Mounting boot.wim..."
     Dism /Mount-Image /ImageFile:"$WinPEWorkDir\media\sources\boot.wim" /Index:1 /MountDir:"$MountDir" 
-    Prepare-OverlayReplacements -MountDir $MountDir -OverlayDir $OverlayDir
 
     Write-Info "Adding WinPE packages..."
     Dism /Add-Package /Image:$MountDir /PackagePath:"$OCPath\WinPE-WMI.cab" 
@@ -343,7 +255,6 @@ if (-not (Test-Path "$WinPEWorkDir\media\sources\boot.wim")) {
 
 Write-Info "Performing incremental update..."
 Dism /Mount-Image /ImageFile:"$WinPEWorkDir\media\sources\boot.wim" /Index:1 /MountDir:"$MountDir" 
-Prepare-OverlayReplacements -MountDir $MountDir -OverlayDir $OverlayDir
 Copy-PixelSetupFiles -MountDir $MountDir
 Dism /Unmount-Image /MountDir:$MountDir /Commit 
 
