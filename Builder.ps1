@@ -23,7 +23,7 @@ param(
     [switch]$Autostart,
     [string]$SourcePath = $PSScriptRoot,
     [ValidateSet("amd64","x64","x86","arm","arm64","ia64","axp64","woa")][string]$Arch = "amd64",
-    [ValidateSet("pixelrecovery")][string[]]$Features = @()
+    [ValidateSet("pixelrecovery", "runner", "hiddenconhost")][string[]]$Features = @()
 )
 
 # --- CONFIGURATION ---
@@ -76,6 +76,20 @@ if (-not (Test-Path $CopypePath)) { Write-ErrorAndExit "copype.cmd not found at 
 if (-not (Test-Path $MakePEPath)) { Write-ErrorAndExit "MakeWinPEMedia.cmd not found at '$MakePEPath'." }
 Write-OK "Environment validation passed."
 
+# --- BUILD NUMBER MANAGEMENT ---
+$BuildNumberFile = Join-Path $SrcDir ".BUILDNO"
+$CurrentBuildNo = 0
+if (Test-Path $BuildNumberFile) {
+    $rawBuildNo = (Get-Content $BuildNumberFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+    if ($rawBuildNo) {
+        try { $CurrentBuildNo = [int]$rawBuildNo } catch { $CurrentBuildNo = 0 }
+    }
+}
+$NewBuildNo = $CurrentBuildNo + 1
+Set-Content -Path $BuildNumberFile -Value $NewBuildNo -Encoding ASCII
+$script:BuildNo = $NewBuildNo.ToString()
+Write-Info "Incremented build number to $script:BuildNo."
+
 # --- COPY FILES FUNCTION ------------------------------------------------------
 function Copy-PixelSetupFiles {
     param([string]$MountDir)
@@ -88,6 +102,31 @@ function Copy-PixelSetupFiles {
     }
 
     if (Test-Path $OverlayDir) {
+        Write-Info "Preparing ACLs for existing targets in mount dir..."
+        Get-ChildItem -Path $OverlayDir -Recurse -Force | ForEach-Object {
+            $rel = $_.FullName.Substring($OverlayDir.Length).TrimStart('\','/')
+            if (-not $rel) { return }
+            $dest = Join-Path $MountDir $rel
+
+            if (Test-Path $dest) {
+                try {
+                    if ($_.PSIsContainer) {
+                        & takeown.exe /F "$dest" /A /R /D Y | Out-Null
+                        & icacls.exe "$dest" /grant "*S-1-5-32-544:(OI)(CI)F" /T /C | Out-Null  # Administrators
+                        & icacls.exe "$dest" /grant "$($env:USERNAME):(OI)(CI)F" /T /C | Out-Null
+                    }
+                    else {
+                        & takeown.exe /F "$dest" /A /D Y | Out-Null
+                        & icacls.exe "$dest" /grant "*S-1-5-32-544:F" /C | Out-Null            # Administrators
+                        & icacls.exe "$dest" /grant "$($env:USERNAME):F" /C | Out-Null
+                    }
+                }
+                catch {
+                    Write-Warn "ACL adjust failed for $dest - $_"
+                }
+            }
+        }
+
         Write-Info "Applying overlay files..."
         Copy-Item "$OverlayDir\*" $MountDir -Recurse -Force
     }
@@ -127,14 +166,33 @@ function Copy-PixelSetupFiles {
     Write-Info "Configuring startnet.cmd..."
     $Startnet = Join-Path $MountDir "Windows\System32\startnet.cmd"
     if ($Autostart) {
-        $StartupCmd = @"
+        if ($Features -and $Features -contains 'runner') {
+            Write-Info "Including feature 'runner' (Use experimental launcher script to do prepwork)..."
+            if ($Features -and $Features -contains 'hiddenconhost') {
+                Write-Info "Including feature 'hiddenconhost' (launch PowerShell with hidden console)..." 
+                $StartupCmd = @"
+wpeinit
+X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\launch.ps1" -MakeHidden
+"@
+            }
+            else {
+                $StartupCmd = @"
+wpeinit
+X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\launch.ps1"
+"@
+            }
+        }
+        else {
+            $StartupCmd = @"
 wpeinit
 X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\MainNew copy.ps1"
 "@
+        }
     }
     else {
         $StartupCmd = "wpeinit"
     }
+
     Set-Content -Path $Startnet -Value $StartupCmd -Encoding ASCII
     Write-OK "startnet.cmd configured (Autostart: $Autostart)"
 
@@ -147,15 +205,9 @@ X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\MainNe
             # Load the offline SOFTWARE hive
             & reg.exe load $hiveKey $SoftwareHive | Out-Null
 
-            # Read build number from source root .BUILDNO if present
-            $BuildNoFile = Join-Path $SrcDir ".BUILDNO"
-            if (Test-Path $BuildNoFile) {
-                $BuildNo = (Get-Content $BuildNoFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-                if (-not $BuildNo) { $BuildNo = "0" }
-            }
-            else {
-                $BuildNo = "0"
-            }
+            # Build number already incremented earlier
+            $BuildNo = $script:BuildNo
+            if (-not $BuildNo) { $BuildNo = "0" }
 
             # Construct a PixelPE build tag with lab in format {gitbranch}(username) and a timestamp <YYMMDD-HHMM>
             $TimeStamp = (Get-Date).ToString("yyMMdd-HHmm")
