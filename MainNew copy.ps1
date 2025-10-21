@@ -253,7 +253,7 @@ $gbTarget.Controls.Add($btnRefreshDisks)
 
 $lvDisks = New-Object System.Windows.Forms.ListView
 $lvDisks.Location = New-Object System.Drawing.Point(12,55)
-$lvDisks.Size = New-Object System.Drawing.Size(428,150)
+$lvDisks.Size = New-Object System.Drawing.Size(850,150)
 $lvDisks.View = 'Details'
 $lvDisks.FullRowSelect = $true
 $lvDisks.Columns.Add((T 'ColumnNumber'),60) | Out-Null
@@ -1213,6 +1213,23 @@ function Start-Installation {
         $btnBack.Enabled = $false; $btnCancel.Enabled = $true; $btnNext.Enabled = $true
     }
 }
+
+# Keyboard shortcut: Shift+F10 opens Command Prompt (conhost)
+$form.KeyPreview = $true
+$form.Add_KeyDown({
+    param($sender, $e)
+    if ($e.Shift -and $e.KeyCode -eq [System.Windows.Forms.Keys]::F10) {
+        $e.SuppressKeyPress = $true
+        Log "Hotkey Shift+F10 pressed — opening Command Prompt."
+        try {
+            $cmd = $env:ComSpec
+            if ([string]::IsNullOrWhiteSpace($cmd)) { $cmd = "conhost.exe" }
+            Start-Process -FilePath $cmd -WorkingDirectory (Get-Location)
+        } catch {
+            Log "Failed to launch Command Prompt: $($_.Exception.Message)"
+        }
+    }
+})
 
 # Wire legacy Install button to the new function (kept hidden)
 $btnInstall.Add_Click({ Start-Installation })
