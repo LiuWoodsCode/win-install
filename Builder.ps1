@@ -172,7 +172,7 @@ function Copy-PixelSetupFiles {
                 Write-Info "Including feature 'hiddenconhost' (launch PowerShell with hidden console)..." 
                 $StartupCmd = @"
 wpeinit
-X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -NoExit -File "X:\PixelSetup\launch.ps1" -MakeHidden
+X:\PwshCore\pwsh.exe -ExecutionPolicy Bypass -File "X:\PixelSetup\launch.ps1" -MakeHidden
 "@
             }
             else {
