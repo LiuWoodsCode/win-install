@@ -24,4 +24,5 @@ public class Win32 {
 
 }
 
+wpeinit
 . "$PSScriptRoot\MainNew copy.ps1"
